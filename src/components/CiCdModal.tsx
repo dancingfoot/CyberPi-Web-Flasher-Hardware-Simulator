@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { GitBranch, Copy, Check, Download, FileCode, X, Terminal, ExternalLink } from 'lucide-react';
+import { GitBranch, Copy, Check, Download, FileCode, X } from 'lucide-react';
 
 interface CiCdModalProps {
   isOpen: boolean;
@@ -59,7 +59,7 @@ jobs:
         run: |
           . $IDF_PATH/export.sh
           python -m esptool --chip esp32 merge_bin \\
-            -o build/cyberpi_merged_firmware.bin \\
+            -o build/cyberpi_merged.bin \\
             --flash_mode dio \\
             --flash_freq 40m \\
             --flash_size 16MB \\
@@ -67,13 +67,13 @@ jobs:
             0x8000 build/partition_table/partition-table.bin \\
             0x10000 build/cyberpi_firmware.bin
 
-      - name: Stage Artifacts
+      - name: Stage Firmware Binaries
         run: |
           mkdir -p output/bin
           cp firmware/build/bootloader/bootloader.bin output/bin/bootloader.bin
           cp firmware/build/partition_table/partition-table.bin output/bin/partition-table.bin
           cp firmware/build/cyberpi_firmware.bin output/bin/app.bin
-          cp firmware/build/cyberpi_merged_firmware.bin output/bin/cyberpi_merged.bin
+          cp firmware/build/cyberpi_merged.bin output/bin/cyberpi_merged.bin
 
       - name: Upload Raw Firmware Artifacts
         uses: actions/upload-artifact@v4
@@ -82,7 +82,7 @@ jobs:
           path: output/bin/
 
   deploy-pages:
-    name: Package & Deploy to GitHub Pages
+    name: Build Web App & Deploy to GitHub Pages
     needs: build-firmware
     runs-on: ubuntu-latest
     environment:
@@ -93,11 +93,22 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Download Compiled Firmware Artifacts
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Web Dependencies & Build App
+        run: |
+          npm ci
+          npm run build
+
+      - name: Download Compiled Firmware Artifacts into dist/bin
         uses: actions/download-artifact@v4
         with:
           name: cyberpi-binaries
-          path: web/bin/
+          path: dist/bin/
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
@@ -105,7 +116,7 @@ jobs:
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: web/
+          path: dist/
 
       - name: Deploy to GitHub Pages
         id: deployment
@@ -142,17 +153,26 @@ static const char *TAG = "CyberPi_App";
 #define PIN_JOY_LEFT     GPIO_NUM_34
 #define PIN_JOY_RIGHT    GPIO_NUM_36
 
-extern "C" void app_main(void) {
-    ESP_LOGI(TAG, "CyberPi Hardware Initialized (ESP32-WROVER-B)");
-
-    // Configure Buttons & Joystick GPIOs
+static void configure_input_pin(gpio_num_t pin, bool enable_pullup) {
     gpio_config_t io_conf = {};
     io_conf.intr_type = GPIO_INTR_DISABLE;
     io_conf.mode = GPIO_MODE_INPUT;
-    io_conf.pin_bit_mask = (1ULL << PIN_BTN_A) | (1ULL << PIN_BTN_B) |
-                           (1ULL << PIN_JOY_PRESS);
-    io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
+    io_conf.pin_bit_mask = (1ULL << pin);
+    io_conf.pull_up_en = enable_pullup ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE;
+    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
     gpio_config(&io_conf);
+}
+
+extern "C" void app_main(void) {
+    ESP_LOGI(TAG, "CyberPi Hardware Initialized (ESP32-WROVER-B)");
+
+    configure_input_pin(PIN_BTN_A, true);
+    configure_input_pin(PIN_BTN_B, true);
+    configure_input_pin(PIN_JOY_PRESS, true);
+    configure_input_pin(PIN_JOY_UP, false);
+    configure_input_pin(PIN_JOY_DOWN, false);
+    configure_input_pin(PIN_JOY_LEFT, false);
+    configure_input_pin(PIN_JOY_RIGHT, false);
 
     uint32_t frame = 0;
     while (true) {
@@ -160,13 +180,30 @@ extern "C" void app_main(void) {
         bool btn_b = (gpio_get_level(PIN_BTN_B) == 0);
         bool joy_press = (gpio_get_level(PIN_JOY_PRESS) == 0);
 
-        // Emit telemetry packet over UART (readable by Web Serial Monitor)
-        printf("{\\"frame\\":%lu,\\"btnA\\":%d,\\"btnB\\":%d,\\"joyCenter\\":%d,\\"uptime_ms\\":%lld}\\n",
-               frame++, btn_a, btn_b, joy_press, esp_timer_get_time() / 1000);
+        int joy_x = 0;
+        if (gpio_get_level(PIN_JOY_LEFT) == 0) joy_x = -1;
+        else if (gpio_get_level(PIN_JOY_RIGHT) == 0) joy_x = 1;
+
+        int joy_y = 0;
+        if (gpio_get_level(PIN_JOY_UP) == 0) joy_y = -1;
+        else if (gpio_get_level(PIN_JOY_DOWN) == 0) joy_y = 1;
+
+        printf("{\\"frame\\":%lu,\\"btnA\\":%d,\\"btnB\\":%d,\\"joyX\\":%d,\\"joyY\\":%d,\\"joyCenter\\":%d,\\"uptime_ms\\":%lld}\\n",
+               frame++, btn_a ? 1 : 0, btn_b ? 1 : 0, joy_x, joy_y, joy_press ? 1 : 0, esp_timer_get_time() / 1000);
 
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }`
+  },
+  main_cmake: {
+    filename: 'main/CMakeLists.txt',
+    path: 'firmware/main/CMakeLists.txt',
+    language: 'cmake',
+    content: `idf_component_register(
+    SRCS "main.cpp"
+    INCLUDE_DIRS "."
+    REQUIRES driver esp_timer esp_log
+)`
   },
   root_cmake: {
     filename: 'CMakeLists.txt',
@@ -210,7 +247,7 @@ export const CiCdModal: React.FC<CiCdModalProps> = ({ isOpen, onClose }) => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = currentFile.filename;
+    a.download = currentFile.filename.split('/').pop() || currentFile.filename;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -229,7 +266,7 @@ export const CiCdModal: React.FC<CiCdModalProps> = ({ isOpen, onClose }) => {
                 CI/CD Workflow & ESP-IDF Repository Source Files
               </h2>
               <p className="text-xs text-zinc-400">
-                Ready-to-push files for automated compilation on GitHub Actions & deployment to Pages
+                Included in this repository for automated compilation on GitHub Actions & deployment to Pages
               </p>
             </div>
           </div>
@@ -237,6 +274,7 @@ export const CiCdModal: React.FC<CiCdModalProps> = ({ isOpen, onClose }) => {
           <button
             type="button"
             onClick={onClose}
+            aria-label="Close modal"
             className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -250,7 +288,7 @@ export const CiCdModal: React.FC<CiCdModalProps> = ({ isOpen, onClose }) => {
               key={key}
               type="button"
               onClick={() => setActiveTab(key)}
-              className={`flex items-center gap-2 px-3.5 py-2 text-xs font-mono font-medium rounded-t-lg transition-colors border-t border-x ${
+              className={`flex items-center gap-2 px-3.5 py-2 text-xs font-mono font-medium rounded-t-lg transition-colors border-t border-x shrink-0 ${
                 activeTab === key
                   ? 'bg-zinc-900 text-cyan-300 border-zinc-700'
                   : 'bg-transparent text-zinc-400 border-transparent hover:text-zinc-200'
@@ -299,7 +337,7 @@ export const CiCdModal: React.FC<CiCdModalProps> = ({ isOpen, onClose }) => {
         {/* Modal Footer Instructions */}
         <div className="p-4 bg-zinc-950 border-t border-zinc-800 flex items-center justify-between text-xs text-zinc-400">
           <span>
-            Push these files to a GitHub repo and enable <strong>Settings &gt; Pages &gt; GitHub Actions</strong>.
+            Push this repo to GitHub and enable <strong>Settings &gt; Pages &gt; GitHub Actions</strong> to compile into <code>bin/</code>.
           </span>
           <button
             type="button"

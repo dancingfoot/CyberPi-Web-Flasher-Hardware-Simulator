@@ -1,0 +1,110 @@
+name: Build ESP-IDF Firmware & Deploy Web Flasher
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: 'pages'
+  cancel-in-progress: true
+
+jobs:
+  build-firmware:
+    name: Build ESP-IDF Firmware
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v5.2.1
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure ESP-IDF for ESP32 (CyberPi)
+        working-directory: firmware
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py set-target esp32
+
+      - name: Compile Firmware
+        working-directory: firmware
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py build
+
+      - name: Merge Binaries for Single-File Web Flashing
+        working-directory: firmware
+        run: |
+          . $IDF_PATH/export.sh
+          python -m esptool --chip esp32 merge_bin \
+            -o build/cyberpi_merged.bin \
+            --flash_mode dio \
+            --flash_freq 40m \
+            --flash_size 16MB \
+            0x1000 build/bootloader/bootloader.bin \
+            0x8000 build/partition_table/partition-table.bin \
+            0x10000 build/cyberpi_firmware.bin
+
+      - name: Stage Firmware Binaries
+        run: |
+          mkdir -p output/bin
+          cp firmware/build/bootloader/bootloader.bin output/bin/bootloader.bin
+          cp firmware/build/partition_table/partition-table.bin output/bin/partition-table.bin
+          cp firmware/build/cyberpi_firmware.bin output/bin/app.bin
+          cp firmware/build/cyberpi_merged.bin output/bin/cyberpi_merged.bin
+
+      - name: Upload Raw Firmware Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cyberpi-binaries
+          path: output/bin/
+
+  deploy-pages:
+    name: Build Web App & Deploy to GitHub Pages
+    needs: build-firmware
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Web Dependencies & Build App
+        run: |
+          npm ci
+          npm run build
+
+      - name: Download Compiled Firmware Artifacts into dist/bin
+        uses: actions/download-artifact@v4
+        with:
+          name: cyberpi-binaries
+          path: dist/bin/
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
