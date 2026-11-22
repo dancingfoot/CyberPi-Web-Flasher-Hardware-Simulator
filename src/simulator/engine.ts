@@ -108,7 +108,7 @@ export function parseCyberPiTelemetry(rawLine: string): TelemetryPacket | null {
   try {
     const parsed = JSON.parse(trimmed);
     if (typeof parsed.frame === 'number' && typeof parsed.uptime_ms === 'number') {
-      return {
+      const packet: TelemetryPacket = {
         frame: parsed.frame,
         btnA: Boolean(parsed.btnA),
         btnB: Boolean(parsed.btnB),
@@ -119,6 +119,13 @@ export function parseCyberPiTelemetry(rawLine: string): TelemetryPacket | null {
         cpu_temp: parsed.cpu_temp,
         free_heap: parsed.free_heap
       };
+      if (parsed.btnHome !== undefined) {
+        packet.btnHome = Boolean(parsed.btnHome);
+      }
+      if (typeof parsed.page === 'number') {
+        packet.page = parsed.page;
+      }
+      return packet;
     }
   } catch {
     return null;

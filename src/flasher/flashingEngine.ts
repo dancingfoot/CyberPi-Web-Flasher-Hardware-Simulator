@@ -131,6 +131,31 @@ export class CyberPiFlasherEngine {
     this.callbacks.onConnectionChange(false);
   }
 
+  private writeQueue: Promise<void> = Promise.resolve();
+
+  /**
+   * Sends a single silent command line (e.g. bidirectional simulator state) without flooding the Serial Monitor log.
+   */
+  public sendRawLine(text: string): Promise<void> {
+    if (!this.isConnected || !this.port || this.isFlashing || !this.port.writable) {
+      return Promise.resolve();
+    }
+    const task = this.writeQueue.then(async () => {
+      if (!this.isConnected || !this.port || this.isFlashing || !this.port.writable) return;
+      const encoder = new TextEncoder();
+      const writer = this.port.writable.getWriter();
+      try {
+        await writer.write(encoder.encode(text + '\n'));
+      } catch {
+        // Ignore transient write errors while disconnecting/flashing
+      } finally {
+        writer.releaseLock();
+      }
+    });
+    this.writeQueue = task.catch(() => {});
+    return task;
+  }
+
   /**
    * Transmits command line data to the connected CyberPi over Web Serial.
    */
@@ -227,8 +252,8 @@ export class CyberPiFlasherEngine {
       await loader.writeFlash({
         fileArray: [{ data: new Uint8Array(fileBuffer), address: offset }],
         flashSize: 'keep',
-        flashMode: 'dio',
-        flashFreq: '40m',
+        flashMode: 'keep',
+        flashFreq: 'keep',
         eraseAll: false,
         compress: true,
         reportProgress: (_fileIndex: number, written: number, total: number) => {

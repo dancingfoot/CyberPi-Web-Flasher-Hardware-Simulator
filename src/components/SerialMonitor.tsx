@@ -44,8 +44,9 @@ export const SerialMonitor: React.FC<SerialMonitorProps> = ({
   const quickCommands = [
     { label: 'help', cmd: 'help' },
     { label: 'status', cmd: 'status' },
-    { label: 'RGB Wave', cmd: 'led 0 255 200' },
-    { label: 'Beep', cmd: 'beep 1200 150' },
+    { label: 'EQ Mode', cmd: 'MODE:0' },
+    { label: 'Diag Mode', cmd: 'MODE:1' },
+    { label: 'Next Mode', cmd: 'mode' },
     { label: 'Reboot', cmd: 'reboot' }
   ];
 
@@ -139,7 +140,7 @@ export const SerialMonitor: React.FC<SerialMonitorProps> = ({
           type="text"
           value={inputVal}
           onChange={(e) => setInputVal(e.target.value)}
-          placeholder={isConnected ? 'Type command (e.g., status, led 255 0 0) and press Enter...' : 'Connect CyberPi to send commands...'}
+          placeholder={isConnected ? 'Type command (e.g., status, MODE:1, SIM:1,0,0,0,0, reboot) and press Enter...' : 'Connect CyberPi to send commands...'}
           disabled={!isConnected}
           className="flex-1 bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-1.5 text-xs text-zinc-200 font-mono focus:outline-none focus:border-cyan-500 disabled:opacity-50"
         />

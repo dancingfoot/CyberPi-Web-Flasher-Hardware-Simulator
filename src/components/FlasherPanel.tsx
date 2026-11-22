@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { FlashProgress } from '../flasher/flashingEngine.ts';
 import { FirmwarePreset } from '../simulator/types.ts';
 import { validateFirmwareOffset } from '../simulator/engine.ts';
-import { Zap, Usb, AlertTriangle, Layers, ExternalLink } from 'lucide-react';
+import { Zap, Usb, AlertTriangle, Layers, ExternalLink, Download } from 'lucide-react';
 
 interface FlasherPanelProps {
   isConnected: boolean;
@@ -17,29 +17,29 @@ interface FlasherPanelProps {
 const PRESET_FIRMWARES: FirmwarePreset[] = [
   {
     id: 'ci-app',
-    name: 'GitHub Actions App Binary (app.bin)',
-    description: 'Compiled ESP-IDF v5.2 C++ application partition from CI/CD artifacts',
-    version: 'CI',
+    name: 'Compiled App Binary (app.bin)',
+    description: 'ESP-IDF v5.2.1 C++ app with 2-way simulator sync, ST7735 LCD & AW9523B RGB (317 KB)',
+    version: 'v5.2.1',
     targetOffset: 0x10000,
-    sizeBytes: 0,
+    sizeBytes: 324128,
     filename: 'bin/app.bin'
   },
   {
     id: 'ci-merged',
-    name: 'GitHub Actions Merged Full Image (cyberpi_merged.bin)',
-    description: 'Combined bootloader + partition table + app image for 16MB CyberPi flash',
-    version: 'CI',
+    name: 'Merged Full Image (cyberpi_merged.bin)',
+    description: 'Bootloader + partition table + 2-way sync CyberPi LCD/RGB app (381 KB) in bin/cyberpi_merged.bin',
+    version: 'v5.2.1',
     targetOffset: 0x0,
-    sizeBytes: 0,
+    sizeBytes: 389664,
     filename: 'bin/cyberpi_merged.bin'
   },
   {
     id: 'ci-bootloader',
     name: 'ESP-IDF Bootloader (bootloader.bin)',
-    description: 'Second-stage ESP32 bootloader compiled for DIO 40MHz 16MB flash',
-    version: 'CI',
+    description: 'Second-stage ESP32 bootloader (27 KB, DIO 40MHz 8MB) in bin/bootloader.bin',
+    version: 'v5.2.1',
     targetOffset: 0x1000,
-    sizeBytes: 0,
+    sizeBytes: 26720,
     filename: 'bin/bootloader.bin'
   }
 ];
@@ -54,7 +54,7 @@ export const FlasherPanel: React.FC<FlasherPanelProps> = ({
   onFlash
 }) => {
   const [baudRate, setBaudRate] = useState<number>(115200);
-  const [selectedPresetId, setSelectedPresetId] = useState<string>('ci-app');
+  const [selectedPresetId, setSelectedPresetId] = useState<string>('ci-merged');
   const [useCustomFile, setUseCustomFile] = useState<boolean>(false);
   const [customFile, setCustomFile] = useState<File | null>(null);
   const [customOffsetHex, setCustomOffsetHex] = useState<string>('0x10000');
@@ -258,9 +258,21 @@ export const FlasherPanel: React.FC<FlasherPanelProps> = ({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-semibold text-white truncate">{preset.name}</span>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800 text-cyan-300 shrink-0">
-                      Offset 0x{preset.targetOffset.toString(16).toUpperCase()}
-                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-800 text-cyan-300">
+                        Offset 0x{preset.targetOffset.toString(16).toUpperCase()}
+                      </span>
+                      <a
+                        href={preset.filename}
+                        download={preset.filename.split('/').pop()}
+                        onClick={(e) => e.stopPropagation()}
+                        title={`Download ${preset.filename.split('/').pop()}`}
+                        aria-label={`Download ${preset.filename.split('/').pop()}`}
+                        className="p-1 rounded bg-zinc-800 hover:bg-cyan-700 text-zinc-300 hover:text-white transition-colors"
+                      >
+                        <Download className="w-3 h-3" />
+                      </a>
+                    </div>
                   </div>
                   <p className="text-xs text-zinc-400 mt-0.5">{preset.description}</p>
                 </div>
@@ -361,7 +373,7 @@ export const FlasherPanel: React.FC<FlasherPanelProps> = ({
             <span>
               {flashProgress.writtenBytes > 0
                 ? `${(flashProgress.writtenBytes / 1024).toFixed(1)} / ${(flashProgress.totalBytes / 1024).toFixed(1)} KB`
-                : 'Flash Size: 16MB DIO'}
+                : 'Flash Size: 8MB DIO'}
             </span>
             {flashProgress.speedKBps > 0 && (
               <span>Rate: {flashProgress.speedKBps.toFixed(1)} KB/s</span>

@@ -58,6 +58,14 @@ test('telemetry packet formatting and parsing roundtrip', () => {
   assert.equal(parsed?.joyX, 1);
   assert.equal(parsed?.joyY, -1);
   assert.equal(parsed?.uptime_ms, 1500);
+
+  const parsedWithSync = parseCyberPiTelemetry(
+    '{"frame":7,"btnA":1,"btnB":0,"joyX":0,"joyY":-1,"joyCenter":1,"btnHome":1,"page":2,"uptime_ms":2500}'
+  );
+  assert.equal(parsedWithSync?.btnA, true);
+  assert.equal(parsedWithSync?.joyCenter, true);
+  assert.equal(parsedWithSync?.btnHome, true);
+  assert.equal(parsedWithSync?.page, 2);
 });
 
 test('telemetry parser rejects invalid line inputs safely', () => {

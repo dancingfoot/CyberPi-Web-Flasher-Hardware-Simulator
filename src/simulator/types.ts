@@ -1,4 +1,4 @@
-export type DisplayMode = 'dashboard' | 'bouncing_ball' | 'imu_horizon' | 'rgb_rainbow' | 'terminal_stream';
+export type DisplayMode = 'spectrum_eq' | 'dashboard' | 'bouncing_ball' | 'imu_horizon' | 'rgb_rainbow' | 'terminal_stream';
 
 export interface CyberPiInputs {
   btnA: boolean;
@@ -15,6 +15,8 @@ export interface TelemetryPacket {
   joyX: number;
   joyY: number;
   joyCenter: boolean;
+  btnHome?: boolean;
+  page?: number;
   uptime_ms: number;
   cpu_temp?: number;
   free_heap?: number;
